@@ -140,7 +140,7 @@ int main() {
 
             // 충돌 검사
             if (checkCollision(player, object)) {
-                std::cout << "Collision detected! Exiting..." << std::endl;
+                std::cout << "충돌됨" << std::endl;
                 glfwSetWindowShouldClose(window, true);
             }
 
