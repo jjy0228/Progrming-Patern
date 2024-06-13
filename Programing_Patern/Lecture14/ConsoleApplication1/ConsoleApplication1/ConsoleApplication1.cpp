@@ -1,4 +1,4 @@
-﻿#pragma comment(lib, "Opengl32.lib")
+#pragma comment(lib, "Opengl32.lib")
 
 #include <GLFW/glfw3.h>
 #include <iostream>
@@ -7,18 +7,17 @@
 #include <cmath>
 #include <cstdlib> // rand() 함수를 사용하기 위한 헤더
 #include <ctime>   // srand() 함수에 사용되는 시간 헤더
-
-//playerVelocityY += GRAVITY * deltaTime;  속도 = 초기 속도 + 중력 가속도 * 시간
-//player.posY += playerVelocityY * deltaTime;  위치 = 초기 위치 + 속도 * 시간
-//object.posX += OBJECT_SPEED * deltaTime;  물체의 위치 = 초기 위치 + 속도 * 시간
+#include <algorithm> // remove_if를 사용하기 위한 헤더
 
 const int WINDOW_WIDTH = 1260;
 const int WINDOW_HEIGHT = 800;
 const float PIXELS_PER_METER = 100.0f;
 const float GRAVITY = -9.8f; // 중력 가속도 (m/s^2)
-const float JUMP_VELOCITY = 3.0f; // 점프 속도 (m/s)
+const float MAX_JUMP_VELOCITY = 5.0f; // 최대 점프 속도 (m/s)
+const float MIN_JUMP_VELOCITY = 1.0f; // 최소 점프 속도 (m/s)
 const float OBJECT_SPEED = -0.5f; // 물체의 속도 (m/s)
 const float OBJECT_SPAWN_INTERVAL = 3.0f; // 물체 생성 간격 (초)
+const float MAX_HOLD_TIME = 1.0f; // 최대 점프 시간 (초)
 
 struct Object {
     float posX, posY;
@@ -29,12 +28,25 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
 
-void processInput(GLFWwindow* window, bool& isJumping, float& velocityY) {
+void processInput(GLFWwindow* window, bool& isJumping, float& velocityY, bool& isSpacePressed, float& spacePressedTime) {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && !isJumping) {
-        isJumping = true;
-        velocityY = JUMP_VELOCITY;
+
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+        if (!isSpacePressed) {
+            isSpacePressed = true;
+            spacePressedTime = 0.0f;
+        }
+    }
+    else {
+        if (isSpacePressed) {
+            isSpacePressed = false;
+            if (!isJumping) {
+                isJumping = true;
+                float jumpVelocity = MIN_JUMP_VELOCITY + (MAX_JUMP_VELOCITY - MIN_JUMP_VELOCITY) * std::min(spacePressedTime / MAX_HOLD_TIME, 1.0f);
+                velocityY = jumpVelocity;
+            }
+        }
     }
 }
 
@@ -45,7 +57,7 @@ float getRandomHeight() {
 }
 
 bool checkCollision(const Object& player, const Object& object) {
-    // AABB (Axis-Aligned Bounding Box) 충돌 검사
+    // AABB (Axis-Aligned BoundingBox) 충돌 검사
     return (fabs(player.posX - object.posX) * 2 < (player.width + object.width)) &&
         (fabs(player.posY - object.posY) * 2 < (player.height + object.height));
 }
@@ -77,6 +89,8 @@ int main() {
     float playerPosY = -0.85f; // 플레이어의 초기 y 위치
     float playerVelocityY = 0.0f; // 플레이어의 초기 y 속도
     bool isPlayerJumping = false; // 플레이어가 점프 중인지 여부
+    bool isSpacePressed = false; // 스페이스 키가 눌렸는지 여부
+    float spacePressedTime = 0.0f; // 스페이스 키가 눌린 시간
     auto previousTime = std::chrono::high_resolution_clock::now();
     auto lastSpawnTime = std::chrono::high_resolution_clock::now();
 
@@ -87,7 +101,7 @@ int main() {
 
     // 메인 루프
     while (!glfwWindowShouldClose(window)) {
-        processInput(window, isPlayerJumping, playerVelocityY);
+        processInput(window, isPlayerJumping, playerVelocityY, isSpacePressed, spacePressedTime);
 
         // 시간 업데이트
         auto currentTime = std::chrono::high_resolution_clock::now();
@@ -95,6 +109,11 @@ int main() {
         std::chrono::duration<float> spawnElapsedTime = currentTime - lastSpawnTime;
         previousTime = currentTime;
         float deltaTime = elapsedTime.count();
+
+        // 스페이스 키 누르는 시간 업데이트
+        if (isSpacePressed) {
+            spacePressedTime += deltaTime;
+        }
 
         // 중력 가속도 적용
         if (isPlayerJumping) {
@@ -115,8 +134,8 @@ int main() {
             lastSpawnTime = currentTime;
         }
 
-        // 물체 이동
-        for (auto& object : objects) {
+        // 물체 이동 및 화면 밖으로 나간 물체 제거
+        objects.erase(std::remove_if(objects.begin(), objects.end(), [&](Object& object) {
             object.posX += OBJECT_SPEED * deltaTime;
 
             // 충돌 검사
@@ -124,7 +143,10 @@ int main() {
                 std::cout << "Collision detected! Exiting..." << std::endl;
                 glfwSetWindowShouldClose(window, true);
             }
-        }
+
+            // 화면 밖으로 나간 물체를 제거
+            return object.posX < -1.1f;
+            }), objects.end());
 
         // 배경 색상 설정 및 초기화 (검은색)
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
